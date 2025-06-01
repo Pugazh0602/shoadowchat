@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { encryptMessage, decryptMessage } from '../utils/encryption';
 import { useHotkeys } from 'react-hotkeys-hook';
 import QRCode from '../components/QRCode';
+import { io, Socket } from 'socket.io-client';
 
 interface Message {
   id: string;
@@ -11,7 +12,10 @@ interface Message {
   timestamp: number;
   selfDestructTime?: number;
   isRead: boolean;
+  sender?: string;
 }
+
+const SOCKET_SERVER_URL = 'http://localhost:5000';
 
 const ChatRoom: React.FC = () => {
   const { roomId } = useParams<{ roomId: string }>();
@@ -21,6 +25,7 @@ const ChatRoom: React.FC = () => {
   const [selfDestructTime, setSelfDestructTime] = useState(30); // Default 30 seconds
   const [isStealthMode, setIsStealthMode] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const socketRef = useRef<Socket | null>(null);
 
   // Stealth mode hotkey
   useHotkeys('esc', () => {
@@ -31,6 +36,22 @@ const ChatRoom: React.FC = () => {
   useHotkeys('f10', () => {
     window.location.href = 'about:blank';
   });
+
+  // Connect to Socket.IO server and join room
+  useEffect(() => {
+    if (!roomId) return;
+    const socket = io(SOCKET_SERVER_URL, { transports: ['websocket'] });
+    socketRef.current = socket;
+    socket.emit('join-room', roomId);
+
+    socket.on('receive-message', (message: Message) => {
+      setMessages(prev => [...prev, message]);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [roomId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -43,9 +64,9 @@ const ChatRoom: React.FC = () => {
   useEffect(() => {
     // Clean up messages that have self-destructed
     const cleanupInterval = setInterval(() => {
-      setMessages(prevMessages => 
-        prevMessages.filter(msg => 
-          !msg.selfDestructTime || 
+      setMessages(prevMessages =>
+        prevMessages.filter(msg =>
+          !msg.selfDestructTime ||
           Date.now() - msg.timestamp < msg.selfDestructTime
         )
       );
@@ -56,9 +77,9 @@ const ChatRoom: React.FC = () => {
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() || !roomId) return;
 
-    const encryptedContent = encryptMessage(newMessage, roomId!);
+    const encryptedContent = encryptMessage(newMessage, roomId);
     const message: Message = {
       id: Date.now().toString(),
       content: encryptedContent,
@@ -69,6 +90,10 @@ const ChatRoom: React.FC = () => {
 
     setMessages(prev => [...prev, message]);
     setNewMessage('');
+    // Send to server
+    if (socketRef.current) {
+      socketRef.current.emit('send-message', { roomId, message });
+    }
   };
 
   const handleMessageRead = (messageId: string) => {
