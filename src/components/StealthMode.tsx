@@ -3,7 +3,6 @@ import { motion } from 'framer-motion';
 
 const StealthMode: React.FC = () => {
   const [display, setDisplay] = useState('0');
-  const [isCalculating, setIsCalculating] = useState(false);
 
   const handleNumberClick = (num: number) => {
     if (display === '0') {

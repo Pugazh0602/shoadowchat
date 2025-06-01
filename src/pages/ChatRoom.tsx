@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { encryptMessage, decryptMessage } from '../utils/encryption';
 import { useHotkeys } from 'react-hotkeys-hook';
 import QRCode from '../components/QRCode';
 import { io, Socket } from 'socket.io-client';
+import { useFirebaseUser, useUsername } from '../App';
 
 interface Message {
   id: string;
@@ -19,13 +20,25 @@ const SOCKET_SERVER_URL = 'http://localhost:5000';
 
 const ChatRoom: React.FC = () => {
   const { roomId } = useParams<{ roomId: string }>();
-  const navigate = useNavigate();
+  const user = useFirebaseUser();
+  const { username, setUsername, logout } = useUsername();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [selfDestructTime, setSelfDestructTime] = useState(30); // Default 30 seconds
   const [isStealthMode, setIsStealthMode] = useState(false);
+  const [showUsernameModal, setShowUsernameModal] = useState(false);
+  const [tempUsername, setTempUsername] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<Socket | null>(null);
+
+  // Show username modal if not set
+  useEffect(() => {
+    if (user && !username) {
+      setShowUsernameModal(true);
+    } else {
+      setShowUsernameModal(false);
+    }
+  }, [user, username]);
 
   // Stealth mode hotkey
   useHotkeys('esc', () => {
@@ -77,7 +90,7 @@ const ChatRoom: React.FC = () => {
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !roomId) return;
+    if (!newMessage.trim() || !roomId || !username) return;
 
     const encryptedContent = encryptMessage(newMessage, roomId);
     const message: Message = {
@@ -86,6 +99,7 @@ const ChatRoom: React.FC = () => {
       timestamp: Date.now(),
       selfDestructTime: selfDestructTime * 1000,
       isRead: false,
+      sender: username,
     };
 
     setMessages(prev => [...prev, message]);
@@ -103,6 +117,46 @@ const ChatRoom: React.FC = () => {
       )
     );
   };
+
+  // Username modal logic
+  const handleUsernameSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tempUsername.trim()) return;
+    await setUsername(tempUsername.trim());
+    setShowUsernameModal(false);
+    setTempUsername('');
+  };
+
+  if (showUsernameModal) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-70 z-50">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          className="bg-stealth-light p-8 rounded-lg shadow-lg w-full max-w-md"
+        >
+          <h2 className="text-2xl font-bold mb-4 text-center">Set your username</h2>
+          <form onSubmit={handleUsernameSubmit} className="flex flex-col space-y-4">
+            <input
+              type="text"
+              value={tempUsername}
+              onChange={e => setTempUsername(e.target.value)}
+              placeholder="Username"
+              className="bg-stealth-dark text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              autoFocus
+            />
+            <button
+              type="submit"
+              className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Save Username
+            </button>
+          </form>
+        </motion.div>
+      </div>
+    );
+  }
 
   if (isStealthMode) {
     return (
@@ -130,6 +184,19 @@ const ChatRoom: React.FC = () => {
       <header className="bg-stealth-light p-4 flex justify-between items-center">
         <h1 className="text-xl font-bold">ShadowChat Room</h1>
         <div className="flex items-center space-x-4">
+          <span className="text-blue-300 font-semibold">{username}</span>
+          <button
+            onClick={() => setShowUsernameModal(true)}
+            className="text-sm text-blue-400 hover:underline"
+          >
+            Change Username
+          </button>
+          <button
+            onClick={logout}
+            className="text-sm text-red-400 hover:underline"
+          >
+            Logout
+          </button>
           <QRCode roomId={roomId!} />
           <select
             value={selfDestructTime}
@@ -161,6 +228,9 @@ const ChatRoom: React.FC = () => {
               className="bg-stealth-light rounded-lg p-4 max-w-[80%]"
               onMouseEnter={() => handleMessageRead(message.id)}
             >
+              <div className="text-sm font-semibold text-blue-300 mb-1">
+                {message.sender || 'Anonymous'}
+              </div>
               <p className="text-white">
                 {decryptMessage(message.content, roomId!)}
               </p>
@@ -189,10 +259,12 @@ const ChatRoom: React.FC = () => {
             onChange={(e) => setNewMessage(e.target.value)}
             placeholder="Type a message..."
             className="flex-1 bg-stealth-dark text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={!username}
           />
           <button
             type="submit"
             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            disabled={!username}
           >
             Send
           </button>
