@@ -80,10 +80,6 @@ yarn start
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
 ## ⚠️ Disclaimer
 
 This tool is designed for legitimate privacy needs. Users are responsible for using it in accordance with applicable laws and regulations. 
